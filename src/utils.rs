@@ -10,6 +10,7 @@ use crate::{
 #[macro_export]
 macro_rules! map_string {
     ($($key:ident : $value:expr),* $(,)?) => {{
+        #[allow(unused_mut)]
         let mut h_map: ::std::collections::HashMap<String, String> = ::std::collections::HashMap::new();
         $(
             h_map.insert(stringify!($key).to_string(), $value.to_string());

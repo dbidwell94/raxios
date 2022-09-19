@@ -158,7 +158,9 @@ impl Raxios {
         let mut body: Option<T> = None;
 
         if let Some(raw_body) = &raw_body {
-            body = serde_json::from_slice::<T>(raw_body).ok();
+            if deserialize_body {
+                body = serde_json::from_slice::<T>(raw_body).ok();
+            }
         }
 
         return Ok(RaxiosResponse {
