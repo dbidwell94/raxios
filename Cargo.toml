@@ -1,6 +1,6 @@
 [package]
 name = "raxios"
-version = "0.0.1-alpha"
+version = "0.0.2-alpha"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -10,8 +10,9 @@ reqwest = {version = "0.11.11", features = ["json"]}
 serde = {version = "1.0.144"}
 anyhow = {version = "1.0.63"}
 thiserror = {version = "1.0.33"}
+bytes = {version = "1.2.1"}
+serde_json = {version = "1.0.85"}
 
 [dev-dependencies]
 httpmock = {version = "0.6.6"}
-serde_json = {version = "1.0.85"}
 tokio = {version = "1.21.1", features = ["full"]}

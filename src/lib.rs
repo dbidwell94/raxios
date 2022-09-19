@@ -10,6 +10,7 @@ use network_error::NetworkError;
 pub use raxios_config::RaxiosConfig;
 pub use raxios_options::RaxiosOptions;
 pub use raxios_response::RaxiosResponse;
+pub use reqwest;
 use reqwest::{header::HeaderMap, Client, ClientBuilder, RequestBuilder, Response, Url};
 use serde::{Deserialize, Serialize};
 use utils::{map_to_reqwest_headers, reqwest_headers_to_map};
@@ -24,6 +25,15 @@ pub struct Raxios {
 }
 
 impl Raxios {
+    /// Creates a new instance of Raxios with a set base url and optional Options
+    ///
+    /// # Example
+    /// ```rust
+    /// use raxios::Raxios;
+    /// let client = Raxios::new("http://localhost", None);
+    /// assert_ne!(true, client.is_err());
+    ///
+    /// ```
     pub fn new(base_url: &str, options: Option<RaxiosConfig>) -> RaxiosResult<Self> {
         let default_headers: HeaderMap;
         let mut client = ClientBuilder::default();
@@ -44,6 +54,17 @@ impl Raxios {
         })
     }
 
+    /// Sets the default headers for this instance of Raxios.
+    ///
+    /// # Example
+    /// ```rust
+    /// use raxios::{Raxios, map_string};
+    ///
+    /// let mut client = Raxios::new("http://localhost", None).unwrap();
+    /// let set_header_result = client.set_default_headers(Some(map_string!{ header1 : "header 1 value" }));
+    /// assert_ne!(true, set_header_result.is_err());
+    ///
+    /// ```
     pub fn set_default_headers(&mut self, headers: Option<RaxiosHeaders>) -> RaxiosResult<()> {
         let opts: RaxiosConfig = RaxiosConfig {
             headers,
@@ -122,6 +143,7 @@ impl Raxios {
     async fn response_to_raxios_response<T>(
         &self,
         response: Response,
+        deserialize_body: bool,
     ) -> RaxiosResult<RaxiosResponse<T>>
     where
         T: for<'de> Deserialize<'de>,
@@ -132,19 +154,70 @@ impl Raxios {
         let remote_address = response.remote_addr();
         let status = response.status();
 
-        let body = response
-            .json::<T>()
-            .await
-            .map_err(|_| RaxiosError::SerializationError)?;
+        let raw_body = response.bytes().await.ok();
+        let mut body: Option<T> = None;
+
+        if let Some(raw_body) = &raw_body {
+            body = serde_json::from_slice::<T>(raw_body).ok();
+        }
 
         return Ok(RaxiosResponse {
             body,
+            raw_body,
             status,
             headers: reqwest_headers_to_map(&headers)?,
             remote_address,
         });
     }
 
+    /// Sends an HTTP Post request to the configured remote server
+    ///
+    /// * `endpoint` - The remote endpoint. This gets joined with the base_url configured in the ::new() method
+    /// * `data` - Optional data to send to the remote endpoint (to be serialized as JSON). If `None`, then no data is sent instead of `null`
+    /// * `options` - The `RaxiosOptions` for this call. Allows setting of headers and/or query params
+    ///
+    /// # Example
+    /// ```rust
+    /// use httpmock::prelude::*;
+    /// use raxios::Raxios;
+    ///
+    /// #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    /// struct ToReturn {}
+    ///
+    /// #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    /// struct ToSend {
+    ///     testKey: String,
+    /// }
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> anyhow::Result<()> {
+    ///     let server = MockServer::start();
+    ///
+    ///     server.mock(|when, then| {
+    ///         when.path("/test").method(POST);
+    ///         then.status(200).json_body(serde_json::json!({}));
+    ///     });
+    ///
+    ///     let raxios = Raxios::new(&server.base_url(), None).unwrap();
+    ///
+    ///      let response = raxios
+    ///         .post::<ToReturn, ToSend>(
+    ///             "/test",
+    ///             Some(ToSend {
+    ///                 testKey: "Testing".to_string(),
+    ///             }),
+    ///             Some(raxios::RaxiosOptions {
+    ///                 params: Some(raxios::map_string! {param1 : "value1"}),
+    ///                 ..Default::default()
+    ///             }),
+    ///         )
+    ///         .await?;
+    ///     assert_eq!(&200, &response.status);
+    ///     assert_eq!(ToReturn {}, response.body.unwrap());
+    ///
+    ///     Ok(())
+    /// }
+    /// ```
     pub async fn post<T, U>(
         &self,
         endpoint: &str,
@@ -155,18 +228,20 @@ impl Raxios {
         T: for<'de> Deserialize<'de>,
         U: Serialize,
     {
+        let options = options.unwrap_or_default();
         let response = self
             .build_request(
                 data,
-                options.as_ref(),
-                self.client
-                    .post(self.build_url(endpoint, options.as_ref())?),
+                Some(&options),
+                self.client.post(self.build_url(endpoint, Some(&options))?),
             )?
             .send()
             .await
             .map_err(|e| RaxiosError::UnableToSendRequest { err: e })?;
 
-        return Ok(self.response_to_raxios_response(response).await?);
+        return Ok(self
+            .response_to_raxios_response(response, options.deserialize_body)
+            .await?);
     }
 
     /// Sends an HTTP GET request to the configured remote server
@@ -202,7 +277,7 @@ impl Raxios {
     ///             ..Default::default()
     ///         })).await?;
     ///         assert_eq!(&200, &response.status);
-    ///         assert_eq!(ToReturn{}, response.body);
+    ///         assert_eq!(ToReturn{}, response.body.unwrap());
     ///
     ///         Ok(())
     ///     }
@@ -216,17 +291,46 @@ impl Raxios {
     where
         T: for<'de> Deserialize<'de>,
     {
+        let options = options.unwrap_or_default();
         let response = self
             .build_request::<()>(
                 None,
-                options.as_ref(),
-                self.client.get(self.build_url(endpoint, options.as_ref())?),
+                Some(&options),
+                self.client.get(self.build_url(endpoint, Some(&options))?),
             )?
             .send()
             .await
             .map_err(|e| RaxiosError::UnableToSendRequest { err: e })?;
 
-        return Ok(self.response_to_raxios_response(response).await?);
+        return Ok(self
+            .response_to_raxios_response(response, options.deserialize_body)
+            .await?);
+    }
+
+    /// Sends an HTTP DELETE request to the configured remote server
+    pub async fn delete<U>(
+        &self,
+        endpoint: &str,
+        options: Option<RaxiosOptions>,
+    ) -> RaxiosResult<RaxiosResponse<U>>
+    where
+        U: for<'de> Deserialize<'de>,
+    {
+        let options = options.unwrap_or_default();
+        let response = self
+            .build_request::<()>(
+                None,
+                Some(&options),
+                self.client
+                    .delete(self.build_url(endpoint, Some(&options))?),
+            )?
+            .send()
+            .await
+            .map_err(|e| RaxiosError::UnableToSendRequest { err: e })?;
+
+        return Ok(self
+            .response_to_raxios_response(response, options.deserialize_body)
+            .await?);
     }
 }
 
@@ -310,7 +414,7 @@ mod raxios_tests {
                 item1: "Test".to_owned(),
                 item2: "Test2".to_owned()
             },
-            &response.body
+            &response.body.unwrap()
         );
         assert_eq!(
             "application/json",
@@ -340,6 +444,7 @@ mod raxios_tests {
                 Some(RaxiosOptions {
                     headers: None,
                     params: Some(map_string! {key : "value"}),
+                    ..Default::default()
                 }),
             )
             .await;
@@ -348,6 +453,6 @@ mod raxios_tests {
         let response = response.unwrap();
 
         assert_eq!(&200, &response.status);
-        assert_eq!(&test_response, &response.body);
+        assert_eq!(&test_response, &response.body.unwrap());
     }
 }
