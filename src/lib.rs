@@ -7,7 +7,7 @@ mod utils;
 
 use anyhow::anyhow;
 pub use error::{RaxiosError, RaxiosResult};
-use network_error::NetworkError;
+pub use network_error::NetworkError;
 pub use raxios_config::RaxiosConfig;
 pub use raxios_options::RaxiosOptions;
 pub use raxios_response::RaxiosResponse;
