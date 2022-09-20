@@ -16,6 +16,6 @@ pub enum RaxiosError {
     UnableToSendRequest { err: reqwest::Error },
     #[error(transparent)]
     NetworkError(NetworkError),
-    #[error("Unable to serialize data from request")]
-    SerializationError,
+    #[error(transparent)]
+    SerializationError(Box<dyn std::error::Error>),
 }

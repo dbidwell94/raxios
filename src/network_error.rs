@@ -12,9 +12,9 @@ use thiserror::Error;
 /// use raxios::Raxios;
 ///
 /// #[tokio::main]
-/// async fn main() -> anyhow::Result<()> {
+/// async fn main() {
 ///     let server = MockServer::start();
-///     let raxios = Raxios::new(&server.base_url(), None)?;
+///     let raxios = Raxios::new(&server.base_url(), None).unwrap();
 ///
 ///     server.mock(|when, then| {
 ///         when.path("/test").method(GET);
@@ -32,8 +32,6 @@ use thiserror::Error;
 ///     }
 ///
 ///     assert!(response.is_err());
-///
-///     Ok(())
 /// }
 /// ```
 #[derive(Error, Debug)]

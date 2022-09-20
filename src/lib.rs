@@ -197,8 +197,8 @@ impl Raxios {
         if let Some(raw_body) = &raw_body {
             if deserialize_body {
                 let temp_body = serde_json::from_slice::<T>(raw_body);
-                if let Err(ref e) = temp_body {
-                    println!("{e:?}");
+                if let Err(e) = temp_body {
+                    return Err(RaxiosError::SerializationError(Box::new(e)));
                 }
                 body = temp_body.ok();
             }
@@ -233,7 +233,7 @@ impl Raxios {
     /// }
     ///
     /// #[tokio::main]
-    /// async fn main() -> anyhow::Result<()> {
+    /// async fn main() {
     ///     let server = MockServer::start();
     ///
     ///     server.mock(|when, then| {
@@ -254,11 +254,9 @@ impl Raxios {
     ///                 ..Default::default()
     ///             }),
     ///         )
-    ///         .await?;
+    ///         .await.unwrap();
     ///     assert_eq!(&200, &response.status);
     ///     assert_eq!(ToReturn {}, response.body.unwrap());
-    ///
-    ///     Ok(())
     /// }
     /// ```
     pub async fn post<T, U>(
@@ -304,7 +302,7 @@ impl Raxios {
     ///     }
     ///
     ///     #[tokio::main]
-    ///     async fn main() -> anyhow::Result<()> {
+    ///     async fn main() {
     ///         let server = MockServer::start();
     ///         
     ///         server.mock(|when, then|{
@@ -318,11 +316,9 @@ impl Raxios {
     ///         {
     ///             params: Some(raxios::map_string!{param1 : "value1"}),
     ///             ..Default::default()
-    ///         })).await?;
+    ///         })).await.unwrap();
     ///         assert_eq!(&200, &response.status);
     ///         assert_eq!(ToReturn{}, response.body.unwrap());
-    ///
-    ///         Ok(())
     ///     }
     ///     
     /// ```
@@ -365,7 +361,7 @@ impl Raxios {
     ///     struct ToReturn {}
     ///
     ///     #[tokio::main]
-    ///     async fn main() -> anyhow::Result<()> {
+    ///     async fn main() {
     ///         let server = MockServer::start();
     ///
     ///         server.mock(| when, then | {
@@ -373,13 +369,11 @@ impl Raxios {
     ///             then.status(200).json_body(serde_json::json!({}));
     ///         });
     ///
-    ///         let client = Raxios::new(&server.base_url(), None)?;
+    ///         let client = Raxios::new(&server.base_url(), None).unwrap();
     ///
-    ///         let res = client.delete::<(), ToReturn>("/test", None, None).await?;
+    ///         let res = client.delete::<(), ToReturn>("/test", None, None).await.unwrap();
     ///         assert_eq!(&200, &res.status);
     ///         assert_eq!(ToReturn {}, res.body.unwrap());
-    ///
-    ///         Ok(())
     ///     }
     /// ```
     pub async fn delete<T, U>(
@@ -424,7 +418,7 @@ impl Raxios {
     ///     struct ToReturn {}
     ///
     ///     #[tokio::main]
-    ///     async fn main() -> anyhow::Result<()> {
+    ///     async fn main() {
     ///         let server = MockServer::start();
     ///
     ///         server.mock(| when, then | {
@@ -432,13 +426,11 @@ impl Raxios {
     ///             then.status(200).json_body(serde_json::json!({}));
     ///         });
     ///
-    ///         let client = Raxios::new(&server.base_url(), None)?;
+    ///         let client = Raxios::new(&server.base_url(), None).unwrap();
     ///
-    ///         let res = client.put::<(), ToReturn>("/test", None, None).await?;
+    ///         let res = client.put::<(), ToReturn>("/test", None, None).await.unwrap();
     ///         assert_eq!(&200, &res.status);
     ///         assert_eq!(ToReturn {}, res.body.unwrap());
-    ///
-    ///         Ok(())
     ///     }
     /// ```
     pub async fn put<T, U>(
@@ -482,7 +474,7 @@ impl Raxios {
     ///     struct ToReturn {}
     ///
     ///     #[tokio::main]
-    ///     async fn main() -> anyhow::Result<()> {
+    ///     async fn main() {
     ///         let server = MockServer::start();
     ///
     ///         server.mock(| when, then | {
@@ -490,13 +482,11 @@ impl Raxios {
     ///             then.status(200).json_body(serde_json::json!({}));
     ///         });
     ///
-    ///         let client = Raxios::new(&server.base_url(), None)?;
+    ///         let client = Raxios::new(&server.base_url(), None).unwrap();
     ///
-    ///         let res = client.patch::<(), ToReturn>("/test", None, None).await?;
+    ///         let res = client.patch::<(), ToReturn>("/test", None, None).await.unwrap();
     ///         assert_eq!(&200, &res.status);
     ///         assert_eq!(ToReturn {}, res.body.unwrap());
-    ///
-    ///         Ok(())
     ///     }
     /// ```
     pub async fn patch<T, U>(
@@ -668,9 +658,9 @@ mod raxios_tests {
     }
 
     #[tokio::test]
-    async fn test_raxios_delete() -> anyhow::Result<()> {
+    async fn test_raxios_delete() {
         let server = MockServer::start();
-        let raxios = Raxios::new(&server.base_url(), None)?;
+        let raxios = Raxios::new(&server.base_url(), None).unwrap();
 
         let to_return_obj = ToReturn {
             item1: "Test".to_string(),
@@ -681,11 +671,9 @@ mod raxios_tests {
             then.status(200).json_body_obj(&to_return_obj);
         });
 
-        let res = raxios.delete::<(), ToReturn>("/test", None, None).await?;
+        let res = raxios.delete::<(), ToReturn>("/test", None, None).await.unwrap();
 
         assert_eq!(&200, &res.status);
         assert_eq!(to_return_obj, res.body.unwrap());
-
-        Ok(())
     }
 }
