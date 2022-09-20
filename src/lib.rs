@@ -196,7 +196,11 @@ impl Raxios {
 
         if let Some(raw_body) = &raw_body {
             if deserialize_body {
-                body = serde_json::from_slice::<T>(raw_body).ok();
+                let temp_body = serde_json::from_slice::<T>(raw_body);
+                if let Err(ref e) = temp_body {
+                    println!("{e:?}");
+                }
+                body = temp_body.ok();
             }
         }
 
