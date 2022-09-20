@@ -3,7 +3,6 @@ use std::{fmt::Display, net::SocketAddr};
 use bytes::Bytes;
 use reqwest::{Response, StatusCode};
 use thiserror::Error;
-use tokio::runtime::Handle;
 
 /// Represents any non-200 HTTP status code
 ///
@@ -65,22 +64,12 @@ impl Display for NetworkError {
     }
 }
 
-impl From<Response> for NetworkError {
-    fn from(res: Response) -> Self {
-        Self::new(res)
-    }
-}
-
 impl NetworkError {
-    fn new(response: Response) -> Self {
+    pub async fn new(response: Response) -> Self {
         Self {
             status_code: response.status(),
             origin_address: response.remote_addr(),
-            raw_body: tokio::task::block_in_place(move || {
-                return Handle::current().block_on(async move {
-                    return response.bytes().await.ok();
-                });
-            }),
+            raw_body: response.bytes().await.ok(),
         }
     }
 }

@@ -170,9 +170,9 @@ impl Raxios {
         return Ok(builder);
     }
 
-    fn check_response_and_return_err(&self, response: Response) -> RaxiosResult<Response> {
+    async fn check_response_and_return_err(&self, response: Response) -> RaxiosResult<Response> {
         if response.status().is_client_error() || response.status().is_server_error() {
-            return Err(RaxiosError::NetworkError(NetworkError::from(response)));
+            return Err(RaxiosError::NetworkError(NetworkError::new(response).await));
         }
         Ok(response)
     }
@@ -185,7 +185,7 @@ impl Raxios {
     where
         T: for<'de> Deserialize<'de>,
     {
-        let response = self.check_response_and_return_err(response)?;
+        let response = self.check_response_and_return_err(response).await?;
 
         let headers = response.headers().clone();
         let remote_address = response.remote_addr();
