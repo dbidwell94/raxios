@@ -4,7 +4,7 @@ mod raxios_config;
 mod raxios_options;
 mod raxios_response;
 mod utils;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::anyhow;
 pub use error::{RaxiosError, RaxiosResult};
@@ -18,12 +18,32 @@ use serde::{Deserialize, Serialize};
 use utils::{map_to_reqwest_headers, reqwest_headers_to_map};
 
 pub type RaxiosHeaders = ::std::collections::HashMap<String, String>;
+const USER_AGENT: &'static str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Raxios {
     client: Client,
     config: Option<RaxiosConfig>,
     base_url: String,
+}
+
+impl Default for Raxios {
+    fn default() -> Self {
+        let mut headers: RaxiosHeaders = HashMap::new();
+        Self::insert_default_headers(&mut headers);
+
+        Self {
+            client: ClientBuilder::default()
+                .default_headers(map_to_reqwest_headers(&headers).unwrap())
+                .build()
+                .unwrap(),
+            config: Some(RaxiosConfig {
+                headers: Some(headers),
+                ..Default::default()
+            }),
+            base_url: Default::default(),
+        }
+    }
 }
 
 impl Raxios {
@@ -37,26 +57,34 @@ impl Raxios {
     ///
     /// ```
     pub fn new(base_url: &str, options: Option<RaxiosConfig>) -> RaxiosResult<Self> {
+        let mut options = options.unwrap_or_default();
+        let mut headers = options.headers.unwrap_or_default();
+
+        Self::insert_default_headers(&mut headers);
+        options.headers = Some(headers);
+
         let default_headers: HeaderMap;
         let mut client = ClientBuilder::default();
-        if let Some(options) = &options {
-            if let Some(headers) = &options.headers {
-                default_headers = map_to_reqwest_headers(headers)?;
-                client = client.default_headers(default_headers);
-            }
-            if let Some(timeout) = &options.timeout_ms {
-                client = client.timeout(Duration::from_millis(timeout.to_owned()))
-            }
+        if let Some(headers) = &options.headers {
+            default_headers = map_to_reqwest_headers(&headers)?;
+            client = client.default_headers(default_headers);
+        }
+        if let Some(timeout) = &options.timeout_ms {
+            client = client.timeout(Duration::from_millis(timeout.to_owned()))
         }
 
         Ok(Self {
             base_url: base_url.to_string(),
-            config: options,
+            config: Some(options),
             client: client
                 .build()
                 .map_err(|e| RaxiosError::Unknown(anyhow!(e)))?,
             ..Default::default()
         })
+    }
+
+    fn insert_default_headers(headers: &mut RaxiosHeaders) {
+        headers.insert("user-agent".to_string(), USER_AGENT.to_string());
     }
 
     /// Sets the default headers for this instance of Raxios.
@@ -343,7 +371,7 @@ impl Raxios {
 
 #[cfg(test)]
 mod raxios_tests {
-    use crate::{map_string, raxios_options::RaxiosOptions, Raxios};
+    use crate::{map_string, raxios_options::RaxiosOptions, Raxios, USER_AGENT};
     use httpmock::prelude::*;
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
@@ -353,7 +381,20 @@ mod raxios_tests {
     }
 
     #[test]
-    fn test_set_default_headers() {}
+    fn test_set_default_headers() {
+        let raxios = Raxios::default();
+
+        assert_eq!(
+            raxios
+                .config
+                .unwrap()
+                .headers
+                .unwrap()
+                .get("user-agent")
+                .unwrap(),
+            USER_AGENT
+        );
+    }
 
     #[test]
     fn test_build_url_leading_slash() {
