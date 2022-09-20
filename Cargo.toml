@@ -2,6 +2,9 @@
 name = "raxios"
 version = "0.0.2-alpha"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/dbidwell94/raxios"
+description = "An easy to use HTTP client for Rust based off of JS Axios library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
