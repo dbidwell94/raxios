@@ -203,7 +203,7 @@ impl Raxios {
             body,
             raw_body,
             status,
-            headers: reqwest_headers_to_map(&headers)?,
+            response_headers: reqwest_headers_to_map(&headers)?,
             remote_address,
         });
     }
@@ -346,21 +346,75 @@ impl Raxios {
     }
 
     /// Sends an HTTP DELETE request to the configured remote server
-    pub async fn delete<U>(
+    pub async fn delete<T, U>(
         &self,
         endpoint: &str,
+        data: Option<T>,
         options: Option<RaxiosOptions>,
     ) -> RaxiosResult<RaxiosResponse<U>>
     where
+        T: Serialize,
         U: for<'de> Deserialize<'de>,
     {
         let options = options.unwrap_or_default();
         let response = self
-            .build_request::<()>(
-                None,
+            .build_request(
+                data,
                 Some(&options),
                 self.client
                     .delete(self.build_url(endpoint, Some(&options))?),
+            )?
+            .send()
+            .await
+            .map_err(|e| RaxiosError::UnableToSendRequest { err: e })?;
+
+        return Ok(self
+            .response_to_raxios_response(response, options.deserialize_body)
+            .await?);
+    }
+
+    pub async fn put<T, U>(
+        &self,
+        endpoint: &str,
+        data: Option<U>,
+        options: Option<RaxiosOptions>,
+    ) -> RaxiosResult<RaxiosResponse<T>>
+    where
+        U: Serialize,
+        T: for<'de> Deserialize<'de>,
+    {
+        let options = options.unwrap_or_default();
+        let response = self
+            .build_request(
+                data,
+                Some(&options),
+                self.client.put(self.build_url(endpoint, Some(&options))?),
+            )?
+            .send()
+            .await
+            .map_err(|e| RaxiosError::UnableToSendRequest { err: e })?;
+
+        return Ok(self
+            .response_to_raxios_response(response, options.deserialize_body)
+            .await?);
+    }
+
+    pub async fn patch<T, U>(
+        &self,
+        endpoint: &str,
+        data: Option<U>,
+        options: Option<RaxiosOptions>,
+    ) -> RaxiosResult<RaxiosResponse<T>>
+    where
+        U: Serialize,
+        T: for<'de> Deserialize<'de>,
+    {
+        let options = options.unwrap_or_default();
+        let response = self
+            .build_request(
+                data,
+                Some(&options),
+                self.client.patch(self.build_url(endpoint, Some(&options))?),
             )?
             .send()
             .await
@@ -469,7 +523,7 @@ mod raxios_tests {
         );
         assert_eq!(
             "application/json",
-            response.headers.get("content-type").unwrap()
+            response.response_headers.get("content-type").unwrap()
         );
     }
 

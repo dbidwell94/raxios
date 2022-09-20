@@ -10,6 +10,6 @@ pub struct RaxiosResponse<T> {
     pub body: Option<T>,
     pub raw_body: Option<Bytes>,
     pub status: StatusCode,
-    pub headers: RaxiosHeaders,
+    pub response_headers: RaxiosHeaders,
     pub remote_address: Option<SocketAddr>,
 }
