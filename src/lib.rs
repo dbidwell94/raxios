@@ -99,8 +99,11 @@ impl Raxios {
     ///
     /// ```
     pub fn set_default_headers(&mut self, headers: Option<RaxiosHeaders>) -> RaxiosResult<()> {
+        let mut headers = headers.unwrap_or_default();
+        Self::insert_default_headers(&mut headers);
+
         let opts: RaxiosConfig = RaxiosConfig {
-            headers,
+            headers: Some(headers),
             ..self.config.clone().unwrap_or(Default::default())
         };
 
