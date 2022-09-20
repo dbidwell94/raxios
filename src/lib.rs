@@ -4,6 +4,8 @@ mod raxios_config;
 mod raxios_options;
 mod raxios_response;
 mod utils;
+use std::time::Duration;
+
 use anyhow::anyhow;
 pub use error::{RaxiosError, RaxiosResult};
 use network_error::NetworkError;
@@ -41,6 +43,9 @@ impl Raxios {
             if let Some(headers) = &options.headers {
                 default_headers = map_to_reqwest_headers(headers)?;
                 client = client.default_headers(default_headers);
+            }
+            if let Some(timeout) = &options.timeout_ms {
+                client = client.timeout(Duration::from_millis(timeout.to_owned()))
             }
         }
 
