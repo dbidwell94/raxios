@@ -1,43 +1,47 @@
 use std::{fmt::Display, net::SocketAddr};
 
+use bytes::Bytes;
 use reqwest::{Response, StatusCode};
 use thiserror::Error;
+use tokio::runtime::Handle;
 
-#[derive(Error, Debug)]
 /// Represents any non-200 HTTP status code
-/// 
+///
 /// # Example
 /// ```rust
 /// use httpmock::prelude::*;
 /// use raxios::Raxios;
-/// 
+///
 /// #[tokio::main]
 /// async fn main() -> anyhow::Result<()> {
 ///     let server = MockServer::start();
 ///     let raxios = Raxios::new(&server.base_url(), None)?;
-/// 
+///
 ///     server.mock(|when, then| {
 ///         when.path("/test").method(GET);
 ///         then.status(400);
 ///     });
-/// 
+///
 ///     let response = raxios.get::<()>("/test", None).await;
-/// 
+///
 ///     if let Err(raxios::RaxiosError::NetworkError(ref err)) = response {
 ///         assert_eq!(400, err.status_code);
 ///         assert_eq!(Some(*server.address()), err.origin_address);
+///         assert_eq!(false, err.raw_body.is_none());
 ///     } else {
 ///         panic!("Result was not an instance of NetworkError");
 ///     }
-/// 
+///
 ///     assert!(response.is_err());
-/// 
+///
 ///     Ok(())
 /// }
 /// ```
+#[derive(Error, Debug)]
 pub struct NetworkError {
     pub status_code: StatusCode,
     pub origin_address: Option<SocketAddr>,
+    pub raw_body: Option<Bytes>,
 }
 
 impl Display for NetworkError {
@@ -64,6 +68,11 @@ impl NetworkError {
         Self {
             status_code: response.status(),
             origin_address: response.remote_addr(),
+            raw_body: tokio::task::block_in_place(move || {
+                return Handle::current().block_on(async move {
+                    return response.bytes().await.ok();
+                });
+            }),
         }
     }
 }
