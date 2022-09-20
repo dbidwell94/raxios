@@ -4,7 +4,6 @@ mod raxios_config;
 mod raxios_options;
 mod raxios_response;
 mod utils;
-use std::{collections::HashMap, time::Duration};
 
 use anyhow::anyhow;
 pub use error::{RaxiosError, RaxiosResult};
@@ -13,8 +12,10 @@ pub use raxios_config::RaxiosConfig;
 pub use raxios_options::RaxiosOptions;
 pub use raxios_response::RaxiosResponse;
 pub use reqwest;
+pub use reqwest::StatusCode;
 use reqwest::{header::HeaderMap, Client, ClientBuilder, RequestBuilder, Response, Url};
 use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, time::Duration};
 use utils::{map_to_reqwest_headers, reqwest_headers_to_map};
 
 pub type RaxiosHeaders = ::std::collections::HashMap<String, String>;
@@ -668,7 +669,7 @@ mod raxios_tests {
         let raxios = Raxios::new(&server.base_url(), None)?;
 
         let to_return_obj = ToReturn {
-            item1: "Test".to_string()
+            item1: "Test".to_string(),
         };
 
         server.mock(|when, then| {
