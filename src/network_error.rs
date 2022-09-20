@@ -46,13 +46,21 @@ pub struct NetworkError {
 
 impl Display for NetworkError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let body = self
+            .raw_body
+            .as_ref()
+            .map(|val| String::from_utf8(val.to_owned().to_vec()).ok())
+            .unwrap_or_default()
+            .unwrap_or_default();
+
         write!(
             f,
-            "Error -- Status: {}, Origin: {}",
+            "Error -- Status: {}, Origin: {}, Body: {}",
             self.status_code,
             self.origin_address
                 .map(|socket| socket.to_string())
-                .unwrap_or_default()
+                .unwrap_or_default(),
+            body
         )
     }
 }
