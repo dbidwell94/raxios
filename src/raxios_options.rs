@@ -23,10 +23,15 @@ impl Default for RaxiosOptions {
 }
 
 #[derive(Debug, Clone)]
+/// Suppling Raxios with a ContentType will set the `content-type` header as well as change how the data is serialized to the server
 pub enum ContentType {
+    /// Serialize as `application/json`
     Json,
+    /// Serialize as `text/xml`
     TextXml,
+    /// Serialize as `application/xml`
     ApplicationXml,
+    /// Serialize as `application/x-www-form-urlencoded`
     UrlEncoded,
 }
 
@@ -78,6 +83,9 @@ mod tests {
     #[test]
     fn test_content_type_url_encoded_to_string() {
         let c_type = ContentType::UrlEncoded;
-        assert_eq!(String::from("application/x-www-form-urlencoded"), String::from(c_type));
+        assert_eq!(
+            String::from("application/x-www-form-urlencoded"),
+            String::from(c_type)
+        );
     }
 }
