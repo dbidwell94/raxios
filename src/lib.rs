@@ -9,6 +9,7 @@ use anyhow::anyhow;
 pub use error::{RaxiosError, RaxiosResult};
 pub use network_error::NetworkError;
 pub use raxios_config::RaxiosConfig;
+use raxios_options::ContentType;
 pub use raxios_options::RaxiosOptions;
 pub use raxios_response::RaxiosResponse;
 pub use reqwest;
@@ -17,6 +18,8 @@ use reqwest::{header::HeaderMap, Client, ClientBuilder, RequestBuilder, Response
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use utils::{map_to_reqwest_headers, reqwest_headers_to_map};
+
+use crate::error::SerializationError;
 
 pub type RaxiosHeaders = ::std::collections::HashMap<String, String>;
 const USER_AGENT: &'static str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
@@ -31,7 +34,7 @@ pub struct Raxios {
 impl Default for Raxios {
     fn default() -> Self {
         let mut headers: RaxiosHeaders = HashMap::new();
-        Self::insert_default_headers(&mut headers);
+        Self::insert_default_headers(&mut headers, Default::default());
 
         Self {
             client: ClientBuilder::default()
@@ -59,9 +62,13 @@ impl Raxios {
     /// ```
     pub fn new(base_url: &str, options: Option<RaxiosConfig>) -> RaxiosResult<Self> {
         let mut options = options.unwrap_or_default();
-        let mut headers = options.headers.unwrap_or_default();
+        let mut headers = options
+            .headers
+            .as_ref()
+            .map(|r| r.clone())
+            .unwrap_or_default();
 
-        Self::insert_default_headers(&mut headers);
+        Self::insert_default_headers(&mut headers, Some(&options));
         options.headers = Some(headers);
 
         let default_headers: HeaderMap;
@@ -84,8 +91,18 @@ impl Raxios {
         })
     }
 
-    fn insert_default_headers(headers: &mut RaxiosHeaders) {
+    fn insert_default_headers(headers: &mut RaxiosHeaders, config: Option<&RaxiosConfig>) {
         headers.insert("user-agent".to_string(), USER_AGENT.to_string());
+        if let Some(config) = config {
+            headers.insert(
+                reqwest::header::CONTENT_TYPE.to_string(),
+                config.content_type.clone().to_string(),
+            );
+            headers.insert(
+                reqwest::header::ACCEPT.to_string(),
+                config.accept.clone().to_string(),
+            );
+        }
     }
 
     /// Sets the default headers for this instance of Raxios.
@@ -101,7 +118,8 @@ impl Raxios {
     /// ```
     pub fn set_default_headers(&mut self, headers: Option<RaxiosHeaders>) -> RaxiosResult<()> {
         let mut headers = headers.unwrap_or_default();
-        Self::insert_default_headers(&mut headers);
+
+        Self::insert_default_headers(&mut headers, self.config.as_ref());
 
         let opts: RaxiosConfig = RaxiosConfig {
             headers: Some(headers),
@@ -149,6 +167,44 @@ impl Raxios {
         Ok(url)
     }
 
+    fn make_body<U>(
+        &self,
+        data: U,
+        options: Option<&RaxiosOptions>,
+    ) -> RaxiosResult<(Vec<u8>, ContentType)>
+    where
+        U: Serialize,
+    {
+        let mut content_type: ContentType = Default::default();
+
+        if let Some(opts) = options {
+            if let Some(ref c_type) = opts.content_type {
+                content_type = c_type.clone();
+            } else {
+                if let Some(ref config) = self.config {
+                    content_type = config.content_type.clone();
+                }
+            }
+        } else {
+            if let Some(ref config) = self.config {
+                content_type = config.content_type.clone();
+            }
+        }
+
+        let data_to_return = match content_type {
+            ContentType::Json => serde_json::to_vec(&data)
+                .map_err(|e| RaxiosError::SerializationError(SerializationError::Json(e)))?,
+            ContentType::TextXml | ContentType::ApplicationXml => serde_xml_rs::to_string(&data)
+                .map_err(|e| RaxiosError::SerializationError(SerializationError::Xml(e)))?
+                .into_bytes(),
+            ContentType::UrlEncoded => serde_urlencoded::to_string(&data)
+                .map_err(|e| RaxiosError::SerializationError(SerializationError::UrlEncoded(e)))?
+                .into_bytes(),
+        };
+
+        return Ok((data_to_return, content_type));
+    }
+
     fn build_request<U>(
         &self,
         data: Option<U>,
@@ -159,14 +215,22 @@ impl Raxios {
         U: Serialize,
     {
         let mut builder = original_builder;
-        if let Some(body) = data {
-            builder = builder.json(&body);
-        }
         if let Some(options) = options {
             if let Some(headers) = &options.headers {
                 builder = builder.headers(map_to_reqwest_headers(headers)?);
             }
         };
+        if let Some(body) = data {
+            let (body, content_type) = self.make_body(body, options)?;
+            builder = builder.body(body);
+            builder = builder.header(reqwest::header::CONTENT_TYPE, format!("{content_type}"));
+        }
+        if let Some(opts) = options {
+            if let Some(ref accept) = opts.accept {
+                builder = builder.header(reqwest::header::ACCEPT.to_string(), accept.to_string());
+            }
+        }
+
         return Ok(builder);
     }
 
@@ -197,8 +261,8 @@ impl Raxios {
         if let Some(raw_body) = &raw_body {
             if deserialize_body {
                 let temp_body = serde_json::from_slice::<T>(raw_body);
-                if let Err(e) = temp_body {
-                    return Err(RaxiosError::SerializationError(e));
+                if let Err(_) = temp_body {
+                    return Err(RaxiosError::DeserializationError);
                 }
                 body = temp_body.ok();
             }
@@ -518,7 +582,13 @@ impl Raxios {
 
 #[cfg(test)]
 mod raxios_tests {
-    use crate::{map_string, raxios_options::RaxiosOptions, Raxios, USER_AGENT};
+    use std::collections::HashMap;
+
+    use crate::{
+        map_string,
+        raxios_options::{ContentType, RaxiosOptions},
+        Raxios, RaxiosConfig, USER_AGENT,
+    };
     use httpmock::prelude::*;
     use serde::{Deserialize, Serialize};
 
@@ -582,6 +652,118 @@ mod raxios_tests {
             "http://localhost/v1/signup?param1=testParam1",
             built_url.as_str()
         );
+    }
+
+    #[tokio::test]
+    async fn test_new_raxios_has_default_headers() {
+        let server = MockServer::start();
+        let raxios = Raxios::new(&server.base_url(), None).unwrap();
+
+        server.mock(|when, then| {
+            when.path("/test")
+                .header(
+                    reqwest::header::ACCEPT.to_string(),
+                    ContentType::Json.to_string(),
+                )
+                .header(
+                    reqwest::header::CONTENT_TYPE.to_string(),
+                    ContentType::Json.to_string(),
+                );
+            then.status(200);
+        });
+
+        let res = raxios
+            .post::<(), ()>(
+                "/test",
+                None,
+                Some(RaxiosOptions {
+                    deserialize_body: false,
+                    ..Default::default()
+                }),
+            )
+            .await;
+
+        println!("{res:?}");
+    }
+
+    #[tokio::test]
+    async fn test_raxios_json() {
+        let server = MockServer::start();
+        let raxios = Raxios::new(
+            &server.base_url(),
+            Some(RaxiosConfig {
+                content_type: ContentType::Json,
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+
+        server.mock(|when, then| {
+            when.path("/test").method(POST).header(
+                reqwest::header::CONTENT_TYPE.to_string(),
+                ContentType::Json.to_string(),
+            );
+
+            then.status(200);
+        });
+
+        let res = raxios
+            .post::<(), HashMap<String, String>>(
+                "/test",
+                Some(HashMap::new()),
+                Some(RaxiosOptions {
+                    deserialize_body: false,
+                    accept: Some(ContentType::Json),
+                    ..Default::default()
+                }),
+            )
+            .await;
+
+        println!("{res:?}");
+    }
+
+    #[tokio::test]
+    async fn test_raxios_xml() {
+        let server = MockServer::start();
+        let raxios = Raxios::new(
+            &server.base_url(),
+            Some(RaxiosConfig {
+                accept: ContentType::Json,
+                content_type: ContentType::ApplicationXml,
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+        let expected_response_body = NetworkTestResponse {
+            item1: String::from("test"),
+            item2: String::from("test2"),
+        };
+        let expected_request_body = ToReturn {
+            item1: String::from("testing123"),
+        };
+
+        let mock = server.mock(|when, then| {
+            when.path("/test")
+                .method(POST)
+                .header(
+                    reqwest::header::CONTENT_TYPE.to_string(),
+                    ContentType::ApplicationXml.to_string(),
+                )
+                .body(serde_xml_rs::to_string(&expected_request_body).unwrap());
+            then.status(200).json_body_obj(&expected_response_body);
+        });
+
+        let res = raxios
+            .post::<NetworkTestResponse, ToReturn>(
+                "/test",
+                Some(ToReturn {
+                    item1: String::from("testing123"),
+                }),
+                None,
+            )
+            .await;
+        mock.assert_async().await;
+        assert_ne!(true, res.is_err());
     }
 
     #[tokio::test]
@@ -671,7 +853,10 @@ mod raxios_tests {
             then.status(200).json_body_obj(&to_return_obj);
         });
 
-        let res = raxios.delete::<(), ToReturn>("/test", None, None).await.unwrap();
+        let res = raxios
+            .delete::<(), ToReturn>("/test", None, None)
+            .await
+            .unwrap();
 
         assert_eq!(&200, &res.status);
         assert_eq!(to_return_obj, res.body.unwrap());
