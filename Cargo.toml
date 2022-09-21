@@ -5,6 +5,8 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/dbidwell94/raxios"
 description = "An easy to use HTTP client for Rust based off of JS Axios library"
+keywords = ["async", "http", "axios", "web", "reqwest"]
+authors = ["Devin Bidwell <dbidwell94@gmail.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
