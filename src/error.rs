@@ -5,6 +5,16 @@ use crate::network_error::NetworkError;
 pub type RaxiosResult<T> = Result<T, RaxiosError>;
 
 #[derive(Error, Debug)]
+pub enum SerializationError {
+    #[error(transparent)]
+    Json(serde_json::Error),
+    #[error(transparent)]
+    Xml(serde_xml_rs::Error),
+    #[error(transparent)]
+    UrlEncoded(serde_urlencoded::ser::Error),
+}
+
+#[derive(Error, Debug)]
 pub enum RaxiosError {
     #[error(transparent)]
     Unknown(anyhow::Error),
@@ -17,5 +27,7 @@ pub enum RaxiosError {
     #[error(transparent)]
     NetworkError(NetworkError),
     #[error(transparent)]
-    SerializationError(serde_json::Error),
+    SerializationError(SerializationError),
+    #[error("")]
+    DeserializationError
 }
