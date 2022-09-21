@@ -17,5 +17,5 @@ pub enum RaxiosError {
     #[error(transparent)]
     NetworkError(NetworkError),
     #[error(transparent)]
-    SerializationError(Box<dyn std::error::Error>),
+    SerializationError(serde_json::Error),
 }

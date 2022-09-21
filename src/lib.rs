@@ -198,7 +198,7 @@ impl Raxios {
             if deserialize_body {
                 let temp_body = serde_json::from_slice::<T>(raw_body);
                 if let Err(e) = temp_body {
-                    return Err(RaxiosError::SerializationError(Box::new(e)));
+                    return Err(RaxiosError::SerializationError(e));
                 }
                 body = temp_body.ok();
             }
