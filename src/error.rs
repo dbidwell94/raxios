@@ -4,6 +4,7 @@ use crate::network_error::NetworkError;
 
 pub type RaxiosResult<T> = Result<T, RaxiosError>;
 
+/// Represents an error that occurs when attempting to deserialize a response body into type T
 #[derive(Error, Debug)]
 pub enum DeserializationError {
     #[error(transparent)]
@@ -16,6 +17,7 @@ pub enum DeserializationError {
     Unknown(String),
 }
 
+/// Represents an error that occurs when attempting to serialize a request body into type T
 #[derive(Error, Debug)]
 pub enum SerializationError {
     #[error(transparent)]

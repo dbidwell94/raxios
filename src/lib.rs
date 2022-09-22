@@ -7,8 +7,7 @@ mod utils;
 
 use anyhow::anyhow;
 use bytes::Bytes;
-use error::DeserializationError;
-pub use error::{RaxiosError, RaxiosResult};
+pub use error::{DeserializationError, RaxiosError, RaxiosResult, SerializationError};
 pub use network_error::NetworkError;
 pub use raxios_config::RaxiosConfig;
 pub use raxios_options::{ContentType, RaxiosOptions};
@@ -20,8 +19,6 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use utils::{map_to_reqwest_headers, reqwest_headers_to_map};
-
-use crate::error::SerializationError;
 
 pub type RaxiosHeaders = HashMap<String, String>;
 const USER_AGENT: &'static str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
