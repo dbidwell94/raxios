@@ -6,6 +6,7 @@ mod raxios_response;
 mod utils;
 
 use anyhow::anyhow;
+use error::DeserializationError;
 pub use error::{RaxiosError, RaxiosResult};
 pub use network_error::NetworkError;
 pub use raxios_config::RaxiosConfig;
@@ -260,8 +261,10 @@ impl Raxios {
         if let Some(raw_body) = &raw_body {
             if deserialize_body {
                 let temp_body = serde_json::from_slice::<T>(raw_body);
-                if let Err(_) = temp_body {
-                    return Err(RaxiosError::DeserializationError);
+                if let Err(e) = temp_body {
+                    return Err(RaxiosError::DeserializationError(
+                        DeserializationError::Json(e),
+                    ));
                 }
                 body = temp_body.ok();
             }
