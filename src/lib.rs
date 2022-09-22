@@ -6,6 +6,7 @@ mod raxios_response;
 mod utils;
 
 use anyhow::anyhow;
+use bytes::Bytes;
 use error::DeserializationError;
 pub use error::{RaxiosError, RaxiosResult};
 pub use network_error::NetworkError;
@@ -16,12 +17,13 @@ pub use reqwest;
 pub use reqwest::StatusCode;
 use reqwest::{header::HeaderMap, Client, ClientBuilder, RequestBuilder, Response, Url};
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{collections::HashMap, time::Duration};
 use utils::{map_to_reqwest_headers, reqwest_headers_to_map};
 
 use crate::error::SerializationError;
 
-pub type RaxiosHeaders = ::std::collections::HashMap<String, String>;
+pub type RaxiosHeaders = HashMap<String, String>;
 const USER_AGENT: &'static str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug)]
@@ -234,6 +236,34 @@ impl Raxios {
         return Ok(builder);
     }
 
+    fn deserialize_response<T>(
+        &self,
+        raw_body: &Bytes,
+        content_type: ContentType,
+    ) -> RaxiosResult<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        return match content_type {
+            ContentType::Json => Ok(serde_json::from_slice::<T>(raw_body)
+                .map_err(|e| RaxiosError::DeserializationError(DeserializationError::Json(e)))?),
+            ContentType::TextXml | ContentType::ApplicationXml => {
+                let body_string = String::from_utf8(raw_body.to_vec()).map_err(|_| {
+                    RaxiosError::DeserializationError(DeserializationError::Unknown(String::from(
+                        "Response body does not contain valid Utf8",
+                    )))
+                })?;
+                Ok(serde_xml_rs::from_str::<T>(&body_string)
+                    .map_err(|e| RaxiosError::DeserializationError(DeserializationError::Xml(e)))?)
+            }
+            ContentType::UrlEncoded => {
+                Ok(serde_urlencoded::from_bytes::<T>(raw_body).map_err(|e| {
+                    RaxiosError::DeserializationError(DeserializationError::UrlEncoded(e))
+                })?)
+            }
+        };
+    }
+
     async fn check_response_and_return_err(&self, response: Response) -> RaxiosResult<Response> {
         if response.status().is_client_error() || response.status().is_server_error() {
             return Err(RaxiosError::NetworkError(NetworkError::new(response).await));
@@ -250,6 +280,17 @@ impl Raxios {
         T: for<'de> Deserialize<'de>,
     {
         let response = self.check_response_and_return_err(response).await?;
+        let remote_content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .map(|c_type| {
+                c_type
+                    .to_str()
+                    .ok()
+                    .map(|s| s.to_owned())
+                    .unwrap_or_default()
+            })
+            .map(|string| ContentType::from_str(&string).ok().unwrap_or_default());
 
         let headers = response.headers().clone();
         let remote_address = response.remote_addr();
@@ -260,13 +301,11 @@ impl Raxios {
 
         if let Some(raw_body) = &raw_body {
             if deserialize_body {
-                let temp_body = serde_json::from_slice::<T>(raw_body);
-                if let Err(e) = temp_body {
-                    return Err(RaxiosError::DeserializationError(
-                        DeserializationError::Json(e),
-                    ));
+                if let Some(response_content_type) = remote_content_type {
+                    body = Some(self.deserialize_response::<T>(raw_body, response_content_type)?);
+                } else {
+                    body = Some(self.deserialize_response::<T>(raw_body, ContentType::Json)?);
                 }
-                body = temp_body.ok();
             }
         }
 
@@ -295,7 +334,7 @@ impl Raxios {
     ///
     /// #[derive(serde::Serialize, serde::Deserialize, Debug)]
     /// struct ToSend {
-    ///     testKey: String,
+    ///     test_key: String,
     /// }
     ///
     /// #[tokio::main]
@@ -313,7 +352,7 @@ impl Raxios {
     ///         .post::<ToReturn, ToSend>(
     ///             "/test",
     ///             Some(ToSend {
-    ///                 testKey: "Testing".to_string(),
+    ///                 test_key: "Testing".to_string(),
     ///             }),
     ///             Some(raxios::RaxiosOptions {
     ///                 params: Some(raxios::map_string! {param1 : "value1"}),
@@ -606,7 +645,7 @@ mod raxios_tests {
     }
 
     #[test]
-    fn test_set_default_headers() {
+    fn test_set_default_headers() -> anyhow::Result<()> {
         let raxios = Raxios::default();
 
         assert_eq!(
@@ -619,49 +658,51 @@ mod raxios_tests {
                 .unwrap(),
             USER_AGENT
         );
+        Ok(())
     }
 
     #[test]
-    fn test_build_url_leading_slash() {
-        let raxios = Raxios::new("http://localhost", None).unwrap();
+    fn test_build_url_leading_slash() -> anyhow::Result<()> {
+        let raxios = Raxios::new("http://localhost", None)?;
 
-        let built_url = raxios.build_url("/v1/signup", None).unwrap();
+        let built_url = raxios.build_url("/v1/signup", None)?;
         assert_eq!("http://localhost/v1/signup", built_url.as_str());
+        Ok(())
     }
 
     #[test]
-    fn test_build_url_no_leading_slash() {
-        let raxios = Raxios::new("http://localhost", None).unwrap();
-        let built_url = raxios.build_url("v1/signup", None).unwrap();
+    fn test_build_url_no_leading_slash() -> anyhow::Result<()> {
+        let raxios = Raxios::new("http://localhost", None)?;
+        let built_url = raxios.build_url("v1/signup", None)?;
 
         assert_eq!("http://localhost/v1/signup", built_url.as_str());
+        Ok(())
     }
 
     #[test]
-    fn test_build_url_with_params() {
+    fn test_build_url_with_params() -> anyhow::Result<()> {
         let raxios = Raxios::new("http://localhost", None).unwrap();
-        let built_url = raxios
-            .build_url(
-                "/v1/signup",
-                Some(&RaxiosOptions {
-                    params: Some(map_string! {param1 : "testParam1"}),
-                    ..Default::default()
-                }),
-            )
-            .unwrap();
+        let built_url = raxios.build_url(
+            "/v1/signup",
+            Some(&RaxiosOptions {
+                params: Some(map_string! {param1 : "testParam1"}),
+                ..Default::default()
+            }),
+        )?;
 
         assert_eq!(
             "http://localhost/v1/signup?param1=testParam1",
             built_url.as_str()
         );
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_new_raxios_has_default_headers() {
+    async fn test_new_raxios_has_default_headers() -> anyhow::Result<()> {
         let server = MockServer::start();
-        let raxios = Raxios::new(&server.base_url(), None).unwrap();
+        let raxios = Raxios::new(&server.base_url(), None)?;
 
-        server.mock(|when, then| {
+        let mock = server.mock(|when, then| {
             when.path("/test")
                 .header(
                     reqwest::header::ACCEPT.to_string(),
@@ -674,7 +715,7 @@ mod raxios_tests {
             then.status(200);
         });
 
-        let res = raxios
+        raxios
             .post::<(), ()>(
                 "/test",
                 None,
@@ -683,13 +724,14 @@ mod raxios_tests {
                     ..Default::default()
                 }),
             )
-            .await;
+            .await?;
 
-        println!("{res:?}");
+        mock.assert_async().await;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_raxios_json() {
+    async fn test_raxios_json() -> anyhow::Result<()> {
         let server = MockServer::start();
         let raxios = Raxios::new(
             &server.base_url(),
@@ -697,10 +739,9 @@ mod raxios_tests {
                 content_type: ContentType::Json,
                 ..Default::default()
             }),
-        )
-        .unwrap();
+        )?;
 
-        server.mock(|when, then| {
+        let mock = server.mock(|when, then| {
             when.path("/test").method(POST).header(
                 reqwest::header::CONTENT_TYPE.to_string(),
                 ContentType::Json.to_string(),
@@ -709,7 +750,7 @@ mod raxios_tests {
             then.status(200);
         });
 
-        let res = raxios
+        raxios
             .post::<(), HashMap<String, String>>(
                 "/test",
                 Some(HashMap::new()),
@@ -719,13 +760,14 @@ mod raxios_tests {
                     ..Default::default()
                 }),
             )
-            .await;
+            .await?;
 
-        println!("{res:?}");
+        mock.assert_async().await;
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_raxios_xml() {
+    async fn test_raxios_xml() -> anyhow::Result<()> {
         let server = MockServer::start();
         let raxios = Raxios::new(
             &server.base_url(),
@@ -734,8 +776,7 @@ mod raxios_tests {
                 content_type: ContentType::ApplicationXml,
                 ..Default::default()
             }),
-        )
-        .unwrap();
+        )?;
         let expected_response_body = NetworkTestResponse {
             item1: String::from("test"),
             item2: String::from("test2"),
@@ -763,17 +804,19 @@ mod raxios_tests {
                 }),
                 None,
             )
-            .await;
+            .await?;
         mock.assert_async().await;
-        assert_ne!(true, res.is_err());
+        assert_eq!(expected_response_body, res.body.unwrap());
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_raxios_post() {
+    async fn test_raxios_post() -> anyhow::Result<()> {
         let server = MockServer::start();
-        let raxios = Raxios::new(&server.base_url(), None).unwrap();
+        let raxios = Raxios::new(&server.base_url(), None)?;
 
-        server.mock(|when, then| {
+        let mock = server.mock(|when, then| {
             when.method(POST).path("/test");
             then.status(200)
                 .header("content-type", "application/json")
@@ -793,6 +836,8 @@ mod raxios_tests {
         assert_eq!(false, response.is_err());
 
         let response = response.unwrap();
+
+        mock.assert_async().await;
         assert_eq!(&200, &response.status);
         assert_eq!(
             &NetworkTestResponse {
@@ -805,19 +850,21 @@ mod raxios_tests {
             "application/json",
             response.response_headers.get("content-type").unwrap()
         );
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_raxios_get() {
+    async fn test_raxios_get() -> anyhow::Result<()> {
         let server = MockServer::start();
-        let raxios = Raxios::new(&server.base_url(), None).unwrap();
+        let raxios = Raxios::new(&server.base_url(), None)?;
 
         let test_response = NetworkTestResponse {
             item1: "test1".to_string(),
             item2: "test2".to_string(),
         };
 
-        server.mock(|when, then| {
+        let mock = server.mock(|when, then| {
             when.path("/test").method(GET).query_param("key", "value");
             then.body(serde_json::to_string(&test_response).unwrap())
                 .status(200);
@@ -832,19 +879,19 @@ mod raxios_tests {
                     ..Default::default()
                 }),
             )
-            .await;
+            .await?;
 
-        assert_ne!(true, response.is_err());
-        let response = response.unwrap();
-
+        mock.assert_async().await;
         assert_eq!(&200, &response.status);
         assert_eq!(&test_response, &response.body.unwrap());
+
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_raxios_delete() {
+    async fn test_raxios_delete() -> anyhow::Result<()> {
         let server = MockServer::start();
-        let raxios = Raxios::new(&server.base_url(), None).unwrap();
+        let raxios = Raxios::new(&server.base_url(), None)?;
 
         let to_return_obj = ToReturn {
             item1: "Test".to_string(),
@@ -855,12 +902,43 @@ mod raxios_tests {
             then.status(200).json_body_obj(&to_return_obj);
         });
 
-        let res = raxios
-            .delete::<(), ToReturn>("/test", None, None)
-            .await
-            .unwrap();
+        let res = raxios.delete::<(), ToReturn>("/test", None, None).await?;
 
         assert_eq!(&200, &res.status);
         assert_eq!(to_return_obj, res.body.unwrap());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_auto_deserialization_of_xml() -> anyhow::Result<()> {
+        let server = MockServer::start();
+        let raxios = Raxios::new(&server.base_url(), None)?;
+
+        let expected_response = NetworkTestResponse {
+            item1: String::from("testing"),
+            item2: String::from("testing2"),
+        };
+
+        let mock = server.mock(|when, then| {
+            when.path("/test").method(POST);
+            let body = serde_xml_rs::to_string(&expected_response).unwrap();
+
+            then.status(200)
+                .header(
+                    reqwest::header::CONTENT_TYPE.to_string(),
+                    ContentType::ApplicationXml,
+                )
+                .body(body.as_bytes());
+        });
+
+        let res = raxios
+            .post::<NetworkTestResponse, ()>("/test", None, None)
+            .await?;
+
+        mock.assert_async().await;
+        assert_eq!(expected_response, res.body.unwrap());
+
+        Ok(())
     }
 }

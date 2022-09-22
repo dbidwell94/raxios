@@ -1,4 +1,5 @@
 use crate::RaxiosHeaders;
+use std::str::FromStr;
 use std::{collections::HashMap, fmt::Display};
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,20 @@ pub enum ContentType {
     ApplicationXml,
     /// Serialize as `application/x-www-form-urlencoded`
     UrlEncoded,
+}
+
+impl FromStr for ContentType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        return match s {
+            "application/json" => Ok(Self::Json),
+            "text/xml" => Ok(Self::TextXml),
+            "application/xml" => Ok(Self::ApplicationXml),
+            "application/x-www-form-urlencoded" => Ok(Self::UrlEncoded),
+            _ => Err(()),
+        };
+    }
 }
 
 impl From<ContentType> for String {

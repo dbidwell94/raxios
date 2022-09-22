@@ -8,19 +8,19 @@ use crate::{
 };
 
 /// A quick macro to generate a HashMap<String, String>
-/// 
+///
 /// # Example 1
 /// ```rust
 ///     // The type declaration is for the example only and is not needed.
 ///     let style1: std::collections::HashMap<String, String> = raxios::map_string!{item1 : "item", item2 : "item"};
 /// ```
-/// 
+///
 /// # Example 2
 /// ```rust
 ///     // The type declaration is for the example only and is not needed.
 ///     let style2: std::collections::HashMap<String, String> = raxios::map_string!{"item1" => "item", "item2" => "item"};
 /// ```
-/// 
+///
 #[macro_export]
 macro_rules! map_string {
     ($($key:ident : $value:expr),* $(,)?) => {{

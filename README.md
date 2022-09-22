@@ -3,6 +3,10 @@
 
 Async-centered Rust library similar to the JS library "axios"
 
+!DISCLAIMER!
+While `Raxios` is in an alpha state, consider any minor version changes to be breaking changes.
+Raxios will not be out of Alpha state and stable until the 1.0.0 release.
+
 
 ## Features
 
@@ -17,7 +21,7 @@ Async-centered Rust library similar to the JS library "axios"
 use raxios::Raxios;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
-struct ToRecieve {
+struct ToReceive {
     field1: String
 }
 
@@ -35,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let data_to_send = ToSend { field1 : String::from("Hello World") };
 
     let result = client
-        .post::<ToRecieve, ToSend>("/endpoint", Some(data_to_send), None)
+        .post::<ToReceive, ToSend>("/endpoint", Some(data_to_send), None)
         .await?;
 
     println!("{0}", result.body.unwrap());

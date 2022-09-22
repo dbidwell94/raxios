@@ -7,7 +7,13 @@ pub type RaxiosResult<T> = Result<T, RaxiosError>;
 #[derive(Error, Debug)]
 pub enum DeserializationError {
     #[error(transparent)]
-    Json(serde_json::Error)
+    Json(serde_json::Error),
+    #[error(transparent)]
+    Xml(serde_xml_rs::Error),
+    #[error(transparent)]
+    UrlEncoded(serde_urlencoded::de::Error),
+    #[error("{0}")]
+    Unknown(String),
 }
 
 #[derive(Error, Debug)]
@@ -18,6 +24,8 @@ pub enum SerializationError {
     Xml(serde_xml_rs::Error),
     #[error(transparent)]
     UrlEncoded(serde_urlencoded::ser::Error),
+    #[error("{0}")]
+    Unknown(String),
 }
 
 #[derive(Error, Debug)]
@@ -35,5 +43,5 @@ pub enum RaxiosError {
     #[error(transparent)]
     SerializationError(SerializationError),
     #[error(transparent)]
-    DeserializationError(DeserializationError)
+    DeserializationError(DeserializationError),
 }
