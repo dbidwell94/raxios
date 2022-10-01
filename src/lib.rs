@@ -136,7 +136,7 @@ impl Raxios {
         let mut built_string = String::new();
         built_string += &self.base_url;
 
-        if built_string.chars().nth(built_string.len() - 1) != Some('/')
+        if built_string.chars().nth(built_string.chars().count() - 1) != Some('/')
             && endpoint.chars().nth(0) != Some('/')
         {
             built_string += "/";
